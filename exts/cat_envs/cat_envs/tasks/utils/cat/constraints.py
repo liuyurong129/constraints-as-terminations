@@ -32,6 +32,32 @@ def joint_position(
     cstr = torch.abs(data.joint_pos[:, joint_ids]) - limit
     return cstr
 
+def joint_position_lower_upper(
+    env: ManagerBasedRLEnv,
+    lower_limits: list[float],
+    upper_limits: list[float],
+    names: list[str],
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    robot = env.scene[asset_cfg.name]
+    data = robot.data
+
+    joint_ids, _ = robot.find_joints(names, preserve_order=True)
+    joint_positions = data.joint_pos[:, joint_ids]  # [num_envs, num_joints]
+
+    # 转为张量，shape: [1, num_joints]
+    lower_tensor = torch.tensor(lower_limits, device=joint_positions.device).unsqueeze(0)
+    upper_tensor = torch.tensor(upper_limits, device=joint_positions.device).unsqueeze(0)
+
+    # 计算每个关节是否超出上下限（负值表示没超出）
+    below_lower = lower_tensor - joint_positions
+    above_upper = joint_positions - upper_tensor
+
+    # 如果 joint 在范围内，两者都为负，取 max 得负数（合法）；
+    # 如果超出了某一侧，max 得到正数（违规程度）
+    cstr = torch.maximum(below_lower, above_upper)  # [num_envs, num_joints]
+
+    return cstr
 
 def joint_position_when_moving_forward(
     env: ManagerBasedRLEnv,
@@ -71,6 +97,31 @@ def joint_torque(
     return cstr
 
 
+def joint_torque_list(
+    env: ManagerBasedRLEnv,
+    limits: list[float],  
+    names: list[str],
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    robot = env.scene[asset_cfg.name]
+    data = env.scene[asset_cfg.name].data
+    joint_ids, _ = robot.find_joints(names, preserve_order=True)
+    
+    # Get the device of the tensor we're working with
+    device = data.applied_torque.device
+    
+    # Create the limits tensor on the same device
+    limits_tensor = torch.tensor(limits, dtype=torch.float32, device=device)
+    
+    # Make sure limits_tensor has the right shape for broadcasting
+    if len(limits) == len(joint_ids):
+        # Reshape for broadcasting across batches
+        limits_tensor = limits_tensor.reshape(1, -1)
+    
+    cstr = torch.abs(data.applied_torque[:, joint_ids]) - limits_tensor
+    return cstr
+
+
 def joint_velocity(
     env: ManagerBasedRLEnv,
     limit: float,
@@ -82,6 +133,28 @@ def joint_velocity(
     joint_ids, _ = robot.find_joints(names, preserve_order=True)
     return torch.abs(data.joint_vel[:, joint_ids]) - limit
 
+def joint_velocity_list(
+    env: ManagerBasedRLEnv,
+    limits: list[float], 
+    names: list[str],
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    robot = env.scene[asset_cfg.name]
+    data = env.scene[asset_cfg.name].data
+    joint_ids, _ = robot.find_joints(names, preserve_order=True)
+    
+    # Get the device of the tensor we're working with
+    device = data.joint_vel.device
+    
+    # Create the limits tensor on the same device
+    limits_tensor = torch.tensor(limits, dtype=torch.float32, device=device)
+    
+    # Make sure limits_tensor has the right shape for broadcasting
+    if len(limits) == len(joint_ids):
+        # Reshape for broadcasting across batches
+        limits_tensor = limits_tensor.reshape(1, -1)
+    
+    return torch.abs(data.joint_vel[:, joint_ids]) - limits_tensor
 
 def joint_acceleration(
     env: ManagerBasedRLEnv,

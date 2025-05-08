@@ -223,6 +223,10 @@ def PPO(envs, ppo_cfg, run_path):
                     exit(0)
 
         # Adapted from rslrl
+        # Track total rewards
+        reward_keys = ["rew", "reward", "rewards", "return", "returns"]
+        total_reward = 0.0
+        
         for key in ep_infos[0]:
             infotensor = torch.tensor([], device=device)
             for ep_info in ep_infos:
@@ -235,11 +239,23 @@ def PPO(envs, ppo_cfg, run_path):
                     ep_info[key] = ep_info[key].unsqueeze(0)
                 infotensor = torch.cat((infotensor, ep_info[key].to(device)))
             value = torch.mean(infotensor)
+            
+            # Check if this key is a reward key
+            if any(reward_key in key.lower() for reward_key in reward_keys):
+                total_reward += value.item()  # Add the scalar value to total_reward
+                print(f"{key}: {value:.4f}")
+            
             if "/" in key:
                 writer.add_scalar(key, value, iteration)
             else:
                 writer.add_scalar("Episode/" + key, value, iteration)
-
+        
+        # Print total reward if found
+        if total_reward is not None:
+            print(f"Iteration {iteration}/{NUM_ITERATIONS}, Total Reward: {total_reward:.4f}")
+        writer.add_scalar(
+            "Episode_Reward/total_reward", total_reward, iteration
+        )
         # CaT: must compute the CaT quantity
         not_dones = 1.0 - dones
         rewards *= not_dones
